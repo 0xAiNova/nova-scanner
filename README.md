@@ -1,205 +1,174 @@
-# Nova Scanner — DexScreener Token Intelligence
+# Nova Scanner
 
-Real-time multi-chain token scanner powered by DexScreener. Built for humans and AI agents — with structured JSON APIs, token scoring, risk detection, and action recommendations.
+Real-time Solana token intelligence. Powered by DexScreener. Built to be called by agents.
 
-**Live:** [nova-scanner-taupe.vercel.app](https://nova-scanner-taupe.vercel.app) · **Static UI:** `/static-scanner.html` · Built by [@0xAiNovaCEO](https://x.com/0xAiNovaCEO)
+**Live:** `https://nova-scanner-taupe.vercel.app`
 
-> **Architecture Note:** Nova Scanner runs in-browser to eliminate AI agent credit burn. Previously, 5-min scheduled automations invoked the agent 288+ times/day just for scanning. New architecture: scanner runs client-side (zero agent credits), Nova is only invoked on confirmed 80+ score signals.
+---
 
-## Features
+## API Reference
 
-### Live Scanner Dashboard
-- **Real-time token discovery** from DexScreener profiles + boost feeds
-- **WebSocket connection** to DexScreener boost stream for instant alerts
-- **Scoring engine** (0–100) based on liquidity, volume, buy pressure, momentum, freshness
-- **Signal classification**: STRONG (75+), WATCH (50-74), WEAK (25-49), SKIP (<25)
-- **Multi-chain support**: Solana, Ethereum, Base, BSC, Arbitrum, and more
-- **Sortable columns**: Price changes (5m/1h/24h), volume, liquidity, market cap, age, score
-- **Filters**: Chain, minimum liquidity, minimum score
-- **Detail panel**: Full token breakdown with transaction data, links, and JSON export
+### `GET /api/scan` — Scored token list
 
-### AI Agent API — `/api/ai` (Full Intelligence Layer)
+Returns tokens from DexScreener (profiles + boosts), enriched and scored 0-100.
 
-`GET /api/ai` — AI-optimized endpoint with scoring breakdown, risk flags, action recommendations, and pre-computed ratios.
-
-**Parameters:**
-| Param | Options | Description |
-|-------|---------|-------------|
-| `chain` | `solana`, `ethereum`, `base`, `all` | Chain filter |
-| `format` | `full`, `compact`, `actions_only` | Response verbosity |
-| `action` | `BUY`, `WATCH`, `SKIP`, `AVOID` | Filter by recommendation |
-| `minScore` | 0–100 | Minimum score |
-| `q` | — | Search by symbol/address |
-
-**Example calls:**
-```bash
-# Get BUY signals with full breakdown
-curl "https://nova-scanner-taupe.vercel.app/api/ai?chain=solana&action=BUY&format=full"
-
-# Compact fast-poll format
-curl "https://nova-scanner-taupe.vercel.app/api/ai?format=compact&minScore=75"
-
-# Actions only — for decision agents
-curl "https://nova-scanner-taupe.vercel.app/api/ai?format=actions_only&action=BUY"
-
-# Search a specific token
-curl "https://nova-scanner-taupe.vercel.app/api/ai?q=BONK&format=full"
+```
+/api/scan?chain=solana&minScore=50&minLiq=10000&limit=25
 ```
 
-**Full format response per token:**
-```json
-{
-  "identity": { "token": "...", "symbol": "BONK", "chain": "solana", "dexScreenerUrl": "..." },
-  "market": { "priceUsd": "0.00001", "marketCap": 1200000, "liquidity": 80000, "volume": {...}, "priceChange": {...} },
-  "transactions": { "m5": { "buys": 42, "sells": 8 }, "h1": {...}, "h24": {...} },
-  "ratios": { "volumeToMcap": 1.8, "buyRatio5m": 0.84, "liquidityToMcap": 0.067, "volumeAcceleration": 2.1 },
-  "scoring": { "total": 87, "breakdown": { "liquidity": {...}, "volume": {...}, "buyPressure": {...} } },
-  "risk": { "flags": [...], "riskLevel": "LOW", "criticalCount": 0, "warningCount": 0 },
-  "recommendation": { "action": "BUY", "confidence": "HIGH", "suggestedSize": "3-5% of portfolio", "suggestedStopLoss": "-30%" }
-}
-```
+| Param | Default | Notes |
+|-------|---------|-------|
+| `chain` | `solana` | `solana`, `ethereum`, `base`, `bsc`, `all` |
+| `minScore` | `0` | 0-100 |
+| `minLiq` | `5000` | USD |
+| `limit` | `50` | max 100 |
+| `q` | — | search by symbol/name/address |
 
-**Response also includes `_agentHints`** — endpoint examples, scoring guide, ratio interpretation guide built-in.
-
-### AI Agent API Endpoint
-`GET /api/scan` — Returns scored tokens as structured JSON for agent consumption.
-
-**Parameters:**
-| Param | Default | Description |
-|-------|---------|-------------|
-| `chain` | `solana` | Filter by chain (or `all`) |
-| `minScore` | `0` | Minimum score threshold |
-| `minLiq` | `5000` | Minimum liquidity in USD |
-| `limit` | `50` | Max tokens to return (max 100) |
-| `q` | — | Search query (searches DexScreener pairs) |
-
-**Example calls:**
-```bash
-# Get top Solana tokens with score >= 50
-curl "https://your-app.vercel.app/api/scan?chain=solana&minScore=50"
-
-# Search for a specific token
-curl "https://your-app.vercel.app/api/scan?q=BONK"
-
-# High liquidity tokens across all chains
-curl "https://your-app.vercel.app/api/scan?chain=all&minLiq=100000&minScore=75"
-```
-
-**Response format:**
+**Response:**
 ```json
 {
   "status": "ok",
-  "timestamp": "2025-01-15T12:00:00.000Z",
+  "timestamp": "2026-01-01T00:00:00.000Z",
   "chain": "solana",
-  "count": 25,
+  "count": 12,
   "tokens": [
     {
-      "token": "ADDRESS",
+      "token": "MINT_ADDRESS",
       "symbol": "TOKEN",
-      "name": "Token Name",
       "chain": "solana",
       "price": "0.001234",
       "marketCap": 500000,
-      "liquidity": 50000,
-      "volume24h": 200000,
-      "priceChange": { "m5": 5.2, "h1": 12.5, "h6": -3.1, "h24": 45.0 },
-      "txns": { "m5": { "buys": 45, "sells": 12 }, ... },
-      "score": 82,
+      "liquidity": 52000,
+      "volume24h": 1450000,
+      "priceChange": { "m5": 3.2, "h1": 18.5, "h6": -2.1, "h24": 44.0 },
+      "txns": {
+        "m5": { "buys": 42, "sells": 8 },
+        "h1": { "buys": 310, "sells": 95 },
+        "h24": { "buys": 2100, "sells": 890 }
+      },
+      "ageHours": 4.2,
+      "score": 86,
       "signal": "STRONG_BUY",
-      "dexUrl": "https://dexscreener.com/solana/...",
-      "pairAddress": "..."
+      "dexUrl": "https://dexscreener.com/solana/..."
     }
   ]
 }
 ```
 
-### DexScreener APIs Used
+---
 
-| Endpoint | Type | Rate Limit | Purpose |
-|----------|------|-----------|---------|
-| `/token-profiles/latest/v1` | REST | 60/min | Discover new token profiles |
-| `/token-boosts/top/v1` | REST | 60/min | Find most boosted tokens |
-| `/token-boosts/latest/v1` | REST + WSS | 60/min | Latest boost events |
-| `/tokens/v1/{chain}/{addresses}` | REST | 300/min | Enrich with pair data |
-| `/latest/dex/search?q=` | REST | 300/min | Search pairs |
-| `wss://api.dexscreener.com/token-boosts/latest/v1` | WebSocket | — | Real-time boost stream |
+### `GET /api/ai` — Full AI-optimized response
 
-## Deploy to Vercel
+Same tokens with scoring breakdown, risk flags, action recommendations, and pre-computed ratios.
 
-### Option 1: CLI Deploy
-```bash
-# Install Vercel CLI if needed
-npm i -g vercel
-
-# Deploy from project directory
-cd nova-scanner
-vercel
+```
+/api/ai?chain=solana&action=BUY&format=full&minScore=70
 ```
 
-### Option 2: Git Deploy
-1. Push this folder to a GitHub repo
-2. Go to vercel.com → New Project → Import the repo
-3. Framework preset: Next.js (auto-detected)
-4. Click Deploy
+| Param | Options |
+|-------|---------|
+| `format` | `full` (default), `compact`, `actions_only` |
+| `action` | `BUY`, `WATCH`, `SKIP`, `AVOID` |
+| `chain` | same as /api/scan |
+| `minScore` | 0-100 |
+| `q` | search |
 
-### Option 3: From WSL
-```bash
-cd nova-scanner
-vercel --yes
-```
-
-## Nova Agent Integration
-
-To have your Nova agent consume this scanner data, add this to your agent's data pipeline:
-
-```javascript
-// In your Nova agent code
-async function fetchScannerSignals() {
-  const res = await fetch('https://your-app.vercel.app/api/scan?chain=solana&minScore=50&minLiq=10000');
-  const data = await res.json();
-  
-  // Filter for actionable signals
-  const strongBuys = data.tokens.filter(t => t.signal === 'STRONG_BUY');
-  
-  for (const token of strongBuys) {
-    console.log(`[SIGNAL] ${token.symbol} — Score: ${token.score}, MCap: ${token.marketCap}, Liq: ${token.liquidity}`);
-    // Pass to your trading engine for further analysis
+**`format=full` adds per-token:**
+```json
+{
+  "scoring": {
+    "total": 86,
+    "breakdown": {
+      "liquidity":       { "value": 12, "max": 15, "raw": 52311 },
+      "volume":          { "value": 20, "max": 20, "raw": 1456411 },
+      "volumeMcapRatio": { "value": 15, "max": 15, "raw": 4.18 },
+      "buyPressure":     { "value": 15, "max": 15, "raw": 0.84 },
+      "momentum5m":      { "value":  8, "max": 15, "raw": 6.2 },
+      "trend1h":         { "value":  7, "max": 10, "raw": 22.1 },
+      "freshness":       { "value":  8, "max": 10, "raw": 4.2 }
+    }
+  },
+  "risk": {
+    "flags": [{ "type": "INFO", "flag": "BOOSTED", "detail": "2 active boosts" }],
+    "riskLevel": "LOW",
+    "criticalCount": 0,
+    "warningCount": 0
+  },
+  "recommendation": {
+    "action": "BUY",
+    "confidence": "HIGH",
+    "reason": "Strong score (86/100) with 0 warnings",
+    "suggestedSize": "3-5% of portfolio",
+    "suggestedStopLoss": "-30%",
+    "suggestedTakeProfit": ["50% at +50%", "25% at +100%", "hold 25% trailing -40%"]
   }
-  
-  return data.tokens;
 }
 ```
 
-## Scoring Model
+**`format=compact`** — minimal payload, fast polling:
+```json
+{ "symbol": "TOKEN", "score": 86, "signal": "STRONG_BUY", "price": "0.001234", "change1h": 18.5, "liquidity": 52000 }
+```
 
-| Factor | Weight | Measurement |
-|--------|--------|-------------|
-| Liquidity depth | 15pts | Pool size tiers ($5K → $100K+) |
-| 24h Volume | 20pts | Volume tiers ($10K → $1M+) |
-| Vol/MCap ratio | 15pts | Trading intensity relative to size |
-| Buy pressure (5m) | 15pts | Buy ratio with minimum txn count |
-| Price momentum (5m) | 15pts | Short-term price acceleration |
-| 1h trend | 10pts | Medium-term direction |
-| Freshness | 10pts | Newer tokens score higher |
-
-## Tech Stack
-- **Framework**: Next.js 14 (App Router)
-- **Frontend**: React 18, Inter font (landing page theme)
-- **Styling**: Custom CSS matching Nova landing page design
-- **Data**: DexScreener Public API (no key required)
-- **Deployment**: Vercel (auto-deploy on push to main)
-- **Real-time**: Native WebSocket to DexScreener
-- **Static UI**: `/static-scanner.html` (Vercel proxy at `/api/dex/...`)
-- **Agent**: Nova AI — [nova-de13fb08.base44.app](https://nova-de13fb08.base44.app)
-
-## Repository Map
-
-| Repo | Purpose |
-|------|---------|
-| [nova-scanner](https://github.com/0xAiNova/nova-scanner) | This — DexScreener scanner + dashboard |
-| [0xainova](https://github.com/0xAiNova/0xainova) | Nova landing page (ainova.dev) |
-| [nova-openclaw](https://github.com/0xAiNova/nova-openclaw) | OpenClaw config + brain files |
-| [0xAiNovaCEO](https://github.com/0xAiNova/0xAiNovaCEO) | Nova X persona agent |
+**`format=actions_only`** — pure decisions:
+```json
+{ "symbol": "TOKEN", "action": "BUY", "confidence": "HIGH", "score": 86 }
+```
 
 ---
-Built by [@0xAiNovaCEO](https://x.com/0xAiNovaCEO) — Nova Autonomous AI Agent on Solana
+
+## Scoring Model (0-100)
+
+| Factor | Max | Signal |
+|--------|-----|--------|
+| Liquidity depth | 15 | $5K to $100K+ |
+| 24h Volume | 20 | $10K to $1M+ |
+| Vol/MCap ratio | 15 | 0.2x to 2x+ |
+| Buy pressure 5m | 15 | >55% buys with txn count |
+| Price momentum 5m | 15 | 0% to 20%+ |
+| 1h trend | 10 | 5% to 50%+ |
+| Freshness | 10 | <1h to <72h |
+
+**Signals:** `STRONG_BUY` (75+) · `WATCH` (50-74) · `WEAK` (25-49) · `SKIP` (<25)
+
+---
+
+## Quick Usage (agent code)
+
+```js
+// Top Solana signals
+const { tokens } = await fetch(
+  "https://nova-scanner-taupe.vercel.app/api/scan?chain=solana&minScore=75&limit=10"
+).then(r => r.json());
+// tokens[0] => { symbol, score, signal, price, liquidity, volume24h, dexUrl, ... }
+
+// Full AI analysis with risk flags
+const data = await fetch(
+  "https://nova-scanner-taupe.vercel.app/api/ai?chain=solana&action=BUY&format=full"
+).then(r => r.json());
+// data.tokens[0].recommendation.action === "BUY"
+// data.tokens[0].risk.riskLevel === "LOW"
+
+// Search by symbol
+const result = await fetch(
+  "https://nova-scanner-taupe.vercel.app/api/scan?q=BONK"
+).then(r => r.json());
+```
+
+---
+
+## Data Sources (no API key required)
+
+| DexScreener Endpoint | Purpose |
+|---------------------|---------|
+| `/token-profiles/latest/v1` | Newly listed token profiles |
+| `/token-boosts/top/v1` | Most boosted tokens |
+| `/token-boosts/latest/v1` | Latest boost events |
+| `/tokens/v1/{chain}/{addrs}` | Batch pair enrichment (30/req) |
+| `/latest/dex/search?q=` | Symbol/address search |
+
+Data refreshes every 30s via Vercel edge cache. No auth required.
+
+---
+
+Built by [@0xAiNovaCEO](https://x.com/0xAiNovaCEO)
