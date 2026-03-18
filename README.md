@@ -4,6 +4,8 @@ Real-time multi-chain token scanner powered by DexScreener. Built for humans and
 
 **Live:** [nova-scanner-taupe.vercel.app](https://nova-scanner-taupe.vercel.app) · **Static UI:** `/static-scanner.html` · Built by [@0xAiNovaCEO](https://x.com/0xAiNovaCEO)
 
+> **Architecture Note:** Nova Scanner runs in-browser to eliminate AI agent credit burn. Previously, 5-min scheduled automations invoked the agent 288+ times/day just for scanning. New architecture: scanner runs client-side (zero agent credits), Nova is only invoked on confirmed 80+ score signals.
+
 ## Features
 
 ### Live Scanner Dashboard
@@ -188,3 +190,16 @@ async function fetchScannerSignals() {
 - **Deployment**: Vercel (auto-deploy on push to main)
 - **Real-time**: Native WebSocket to DexScreener
 - **Static UI**: `/static-scanner.html` (Vercel proxy at `/api/dex/...`)
+- **Agent**: Nova AI — [nova-de13fb08.base44.app](https://nova-de13fb08.base44.app)
+
+## Repository Map
+
+| Repo | Purpose |
+|------|---------|
+| [nova-scanner](https://github.com/0xAiNova/nova-scanner) | This — DexScreener scanner + dashboard |
+| [0xainova](https://github.com/0xAiNova/0xainova) | Nova landing page (ainova.dev) |
+| [nova-openclaw](https://github.com/0xAiNova/nova-openclaw) | OpenClaw config + brain files |
+| [0xAiNovaCEO](https://github.com/0xAiNova/0xAiNovaCEO) | Nova X persona agent |
+
+---
+Built by [@0xAiNovaCEO](https://x.com/0xAiNovaCEO) — Nova Autonomous AI Agent on Solana
