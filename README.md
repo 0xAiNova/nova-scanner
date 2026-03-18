@@ -2,6 +2,8 @@
 
 Real-time Solana meme coin scanner powered by DexScreener's public API and WebSocket feeds. Built for AI agent integration and fast token discovery.
 
+> **Architecture Note (March 2026):** Nova Scanner now runs entirely client-side to eliminate AI agent credit burn. Previously, 5-min scheduled automations were invoking the AI agent 288+ times/day just for scanning. New architecture: scanner runs in-browser (zero agent credits), agent is only invoked on confirmed 80+ signals.
+
 ## Features
 
 ### Live Scanner Dashboard
@@ -28,100 +30,79 @@ Real-time Solana meme coin scanner powered by DexScreener's public API and WebSo
 
 **Example calls:**
 ```bash
-# Get top Solana tokens with score >= 50
-curl "https://your-app.vercel.app/api/scan?chain=solana&minScore=50"
+# Get top Solana tokens with score >= 80
+curl "https://nova-scanner.vercel.app/api/scan?chain=solana&minScore=80"
 
 # Search for a specific token
-curl "https://your-app.vercel.app/api/scan?q=BONK"
-
-# High liquidity tokens across all chains
-curl "https://your-app.vercel.app/api/scan?chain=all&minLiq=100000&minScore=75"
+curl "https://nova-scanner.vercel.app/api/scan?q=BONK"
 ```
 
-**Response format:**
-```json
-{
-  "status": "ok",
-  "timestamp": "2025-01-15T12:00:00.000Z",
-  "chain": "solana",
-  "count": 25,
-  "tokens": [
-    {
-      "token": "ADDRESS",
-      "symbol": "TOKEN",
-      "name": "Token Name",
-      "chain": "solana",
-      "price": "0.001234",
-      "marketCap": 500000,
-      "liquidity": 50000,
-      "volume24h": 200000,
-      "priceChange": { "m5": 5.2, "h1": 12.5, "h6": -3.1, "h24": 45.0 },
-      "txns": { "m5": { "buys": 45, "sells": 12 }, ... },
-      "score": 82,
-      "signal": "STRONG_BUY",
-      "dexUrl": "https://dexscreener.com/solana/...",
-      "pairAddress": "..."
-    }
-  ]
-}
-```
-
-### DexScreener APIs Used
+### DexScreener APIs Used (all free, no key required)
 
 | Endpoint | Type | Rate Limit | Purpose |
 |----------|------|-----------|---------|
 | `/token-profiles/latest/v1` | REST | 60/min | Discover new token profiles |
 | `/token-boosts/top/v1` | REST | 60/min | Find most boosted tokens |
-| `/token-boosts/latest/v1` | REST + WSS | 60/min | Latest boost events |
 | `/tokens/v1/{chain}/{addresses}` | REST | 300/min | Enrich with pair data |
-| `/latest/dex/search?q=` | REST | 300/min | Search pairs |
 | `wss://api.dexscreener.com/token-boosts/latest/v1` | WebSocket | — | Real-time boost stream |
+
+## Credit-Efficient Architecture
+
+### Problem (old)
+- Agent automation fired every 5 min → 288 agent invocations/day
+- Each invocation: scan + score + write entities + send alerts = ~20 credits
+- Total: **~5,760 credits/day** just for scanning
+
+### Solution (new)
+```
+Browser/Vercel (free) → scans DexScreener continuously
+                      → scores tokens client-side
+                      → only calls Nova agent when score >= 80
+
+Nova Agent (credits) → receives pre-filtered 80+ signals only
+                     → logs to TradeJournal entity
+                     → sends Telegram alert
+                     → ~2-5 invocations/day max
+```
+
+**Credit reduction: ~98%**
+
+## Nova Agent Integration
+
+The scanner calls Nova's `/api/alert` endpoint only for confirmed STRONG signals:
+
+```javascript
+// Scanner → Nova Agent (only on score >= 80)
+async function notifyNovaAgent(token) {
+  if (token.score < 80) return; // Hard gate — no agent invocation below 80
+
+  await fetch('https://nova-de13fb08.base44.app/functions/logSniperAlerts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      mint: token.token,
+      symbol: token.symbol,
+      signal_score: token.score,
+      curve_sol: token.liquidity / 95, // approx
+      price_usd: token.price,
+      change_1h: token.priceChange?.h1,
+      alert_type: 'new_token',
+      message: `Score ${token.score} — ${token.signal}`
+    })
+  });
+}
+```
 
 ## Deploy to Vercel
 
-### Option 1: CLI Deploy
 ```bash
-# Install Vercel CLI if needed
-npm i -g vercel
-
-# Deploy from project directory
-cd nova-scanner
-vercel
-```
-
-### Option 2: Git Deploy
-1. Push this folder to a GitHub repo
-2. Go to vercel.com → New Project → Import the repo
-3. Framework preset: Next.js (auto-detected)
-4. Click Deploy
-
-### Option 3: From WSL
-```bash
+# Clone and deploy
+git clone https://github.com/0xAiNova/nova-scanner
 cd nova-scanner
 vercel --yes
 ```
 
-## Nova Agent Integration
-
-To have your Nova agent consume this scanner data, add this to your agent's data pipeline:
-
-```javascript
-// In your Nova agent code
-async function fetchScannerSignals() {
-  const res = await fetch('https://your-app.vercel.app/api/scan?chain=solana&minScore=50&minLiq=10000');
-  const data = await res.json();
-  
-  // Filter for actionable signals
-  const strongBuys = data.tokens.filter(t => t.signal === 'STRONG_BUY');
-  
-  for (const token of strongBuys) {
-    console.log(`[SIGNAL] ${token.symbol} — Score: ${token.score}, MCap: ${token.marketCap}, Liq: ${token.liquidity}`);
-    // Pass to your trading engine for further analysis
-  }
-  
-  return data.tokens;
-}
-```
+Or connect the GitHub repo to Vercel for auto-deploy on push.
 
 ## Scoring Model
 
@@ -140,5 +121,18 @@ async function fetchScannerSignals() {
 - **Frontend**: React 18
 - **Styling**: Custom CSS (dark terminal theme)
 - **Data**: DexScreener Public API (no key required)
-- **Deployment**: Vercel
+- **Deployment**: Vercel (free tier)
 - **Real-time**: Native WebSocket to DexScreener
+- **Agent**: Nova AI at [nova-de13fb08.base44.app](https://nova-de13fb08.base44.app)
+
+## Repository Map
+
+| Repo | Purpose |
+|------|---------|
+| [nova-scanner](https://github.com/0xAiNova/nova-scanner) | This — DexScreener scanner + dashboard |
+| [0xainova](https://github.com/0xAiNova/0xainova) | Nova landing page (ainova.dev) |
+| [nova-openclaw](https://github.com/0xAiNova/nova-openclaw) | OpenClaw config + brain files |
+| [0xAiNovaCEO](https://github.com/0xAiNova/0xAiNovaCEO) | Nova X persona agent |
+
+---
+Built by [@0xAiNovaCEO](https://x.com/0xAiNovaCEO) — Nova Autonomous AI Agent on Solana
