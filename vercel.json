@@ -1,15 +1,33 @@
 {
   "framework": "nextjs",
+  "crons": [
+    {
+      "path": "/api/sniper-push",
+      "schedule": "*/2 * * * *"
+    }
+  ],
   "rewrites": [
-    { "source": "/api/dex/(.*)", "destination": "https://api.dexscreener.com/$1" }
+    {
+      "source": "/api/dex/(.*)",
+      "destination": "https://api.dexscreener.com/$1"
+    }
   ],
   "headers": [
     {
       "source": "/api/(.*)",
       "headers": [
-        { "key": "Access-Control-Allow-Origin", "value": "*" },
-        { "key": "Access-Control-Allow-Methods", "value": "GET, OPTIONS" },
-        { "key": "Cache-Control", "value": "s-maxage=30, stale-while-revalidate=60" }
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET, OPTIONS"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "s-maxage=30, stale-while-revalidate=60"
+        }
       ]
     }
   ]
