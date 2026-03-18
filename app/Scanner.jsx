@@ -39,6 +39,7 @@ const pctClass = (v) => (v > 0 ? "pct-up" : v < 0 ? "pct-down" : "pct-flat");
 const pctFmt = (v) => (v == null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(1)}%`);
 
 const computeScore = (pair) => {
+  if (pair._score != null) return pair._score;
   let score = 0;
   const liq = pair.liquidity?.usd || 0;
   const vol = pair.volume?.h24 || 0;
@@ -112,59 +113,36 @@ const getScoreLabel = (s) => {
 };
 
 // ─── API Functions ───
-async function fetchLatestProfiles() {
-  const res = await fetch(`${DEXSCREENER_API}/token-profiles/latest/v1`);
-  if (!res.ok) throw new Error(`profiles ${res.status}`);
-  return res.json();
-}
-
-async function fetchTopBoosts() {
-  const res = await fetch(`${DEXSCREENER_API}/token-boosts/top/v1`);
-  if (!res.ok) throw new Error(`boosts ${res.status}`);
-  return res.json();
-}
-
-async function fetchLatestBoosts() {
-  const res = await fetch(`${DEXSCREENER_API}/token-boosts/latest/v1`);
-  if (!res.ok) throw new Error(`latest boosts ${res.status}`);
-  return res.json();
-}
-
-async function fetchTokenPairs(chain, address) {
-  const res = await fetch(`${DEXSCREENER_API}/tokens/v1/${chain}/${address}`);
-  if (!res.ok) throw new Error(`token pairs ${res.status}`);
-  return res.json();
-}
-
-async function fetchSearchPairs(query) {
-  const res = await fetch(`${DEXSCREENER_API}/latest/dex/search?q=${encodeURIComponent(query)}`);
-  if (!res.ok) throw new Error(`search ${res.status}`);
+async function fetchScannerData(chain, search = null, limit = 100) {
+  const params = new URLSearchParams({ chain, limit, minLiq: 5000 });
+  if (search) params.set("q", search);
+  const res = await fetch(`/api/scan?${params}`);
+  if (!res.ok) throw new Error(`API error ${res.status}`);
   const data = await res.json();
-  return data.pairs || [];
+  return data.tokens || [];
 }
 
-async function enrichTokensWithPairData(tokens, chain = "solana") {
-  // Batch token addresses (max 30 per request per DexScreener API)
-  const filteredTokens = tokens.filter((t) => t.chainId === chain || !chain);
-  const batches = [];
-  for (let i = 0; i < filteredTokens.length; i += 30) {
-    batches.push(filteredTokens.slice(i, i + 30));
-  }
-
-  const allPairs = [];
-  for (const batch of batches) {
-    try {
-      const addresses = batch.map((t) => t.tokenAddress).join(",");
-      const chainId = batch[0]?.chainId || chain;
-      const pairs = await fetchTokenPairs(chainId, addresses);
-      if (Array.isArray(pairs)) allPairs.push(...pairs);
-    } catch (e) {
-      console.warn("Batch fetch failed:", e);
-    }
-    // Rate limit respect
-    await new Promise((r) => setTimeout(r, 250));
-  }
-  return allPairs;
+function normalizeToPair(t) {
+  return {
+    baseToken: { address: t.token, symbol: t.symbol, name: t.name },
+    chainId: t.chain,
+    dexId: t.dex,
+    priceUsd: t.price,
+    priceNative: t.priceNative,
+    marketCap: t.marketCap,
+    fdv: t.marketCap,
+    liquidity: { usd: t.liquidity },
+    volume: { h24: t.volume24h, h1: t.volume1h, h6: null },
+    priceChange: t.priceChange,
+    txns: t.txns,
+    pairAddress: t.pairAddress,
+    pairCreatedAt: t.pairCreatedAt,
+    url: t.dexUrl,
+    boosts: { active: t.boosts },
+    info: { imageUrl: null, socials: [], websites: [] },
+    _score: t.score,
+    _signal: t.signal,
+  };
 }
 
 // ─── Components ───
@@ -334,6 +312,47 @@ function DetailPanel({ pair, onClose }) {
   );
 }
 
+function AgentDocs() {
+  return (
+    <div className="agent-docs">
+      <h3>⚡ AI Agent API — Machine-Readable Token Intelligence</h3>
+      <p>Nova Scanner exposes structured JSON endpoints optimized for AI agents, trading bots, and automation pipelines.</p>
+      <div className="docs-grid">
+        <div className="doc-card">
+          <h4>GET /api/scan</h4>
+          <p>Raw scored token list. Good for simple integrations. Returns symbol, price, score, signal, txns, and market data.</p>
+          <code>/api/scan?chain=solana&minScore=50&limit=50</code>
+        </div>
+        <div className="doc-card">
+          <h4>GET /api/ai</h4>
+          <p>Full AI-optimized response with scoring breakdown, risk flags, action recommendations, pre-computed ratios, and agent usage hints.</p>
+          <code>/api/ai?chain=solana&action=BUY&format=full</code>
+        </div>
+        <div className="doc-card">
+          <h4>Compact Format</h4>
+          <p>Minimal token data — ideal for high-frequency polling by agents that need speed over detail.</p>
+          <code>/api/ai?format=compact&minScore=75</code>
+        </div>
+        <div className="doc-card">
+          <h4>Actions Only</h4>
+          <p>Returns just action + confidence + flags per token. Zero noise — built for decision agents that act on signals directly.</p>
+          <code>/api/ai?format=actions_only&action=BUY</code>
+        </div>
+        <div className="doc-card">
+          <h4>Search by Token</h4>
+          <p>Search any token by symbol, name, or address. Returns scored results with full market snapshot.</p>
+          <code>/api/ai?q=BONK&format=full</code>
+        </div>
+        <div className="doc-card">
+          <h4>Score Guide</h4>
+          <p>75–100: STRONG BUY · 50–74: WATCH · 25–49: WEAK · 0–24: SKIP. Risk levels: LOW / MEDIUM / HIGH based on flag detection.</p>
+          <code>/api/ai?chain=solana&minScore=75&action=BUY</code>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function WsStatusDot({ connected }) {
   return <span className={`ws-dot ${connected ? "ws-live" : "ws-off"}`} title={connected ? "WebSocket Connected" : "WebSocket Disconnected"}></span>;
 }
@@ -389,34 +408,10 @@ export default function App() {
   const loadScannerData = useCallback(async () => {
     try {
       setError(null);
-      const [profiles, boosts] = await Promise.all([fetchLatestProfiles(), fetchTopBoosts()]);
-      const profileList = Array.isArray(profiles) ? profiles : profiles?.data || [];
-      const boostList = Array.isArray(boosts) ? boosts : boosts?.data || [];
-      setBoostedTokens(boostList);
-
-      // Merge unique tokens
-      const tokenMap = new Map();
-      [...profileList, ...boostList].forEach((t) => {
-        if (t.tokenAddress && t.chainId) {
-          tokenMap.set(`${t.chainId}:${t.tokenAddress}`, t);
-        }
-      });
-      const uniqueTokens = Array.from(tokenMap.values());
-
-      // Group by chain and enrich with pair data
-      const byChain = {};
-      uniqueTokens.forEach((t) => {
-        if (!byChain[t.chainId]) byChain[t.chainId] = [];
-        byChain[t.chainId].push(t);
-      });
-
-      const allPairs = [];
-      for (const [chain, tokens] of Object.entries(byChain)) {
-        const chainPairs = await enrichTokensWithPairData(tokens, chain);
-        allPairs.push(...chainPairs);
-      }
-
-      setPairs(allPairs);
+      const chain = chainFilter === "all" ? "solana" : chainFilter;
+      const rawTokens = await fetchScannerData(chain);
+      const fetchedPairs = rawTokens.map(normalizeToPair);
+      setPairs(fetchedPairs);
       setLastRefresh(new Date());
     } catch (e) {
       setError(e.message);
@@ -424,14 +419,14 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [chainFilter]);
 
   const handleSearch = useCallback(async () => {
     if (!searchQuery.trim()) return;
     setLoading(true);
     try {
-      const results = await fetchSearchPairs(searchQuery);
-      setSearchResults(results);
+      const rawTokens = await fetchScannerData("solana", searchQuery);
+      setSearchResults(rawTokens.map(normalizeToPair));
     } catch (e) {
       setError(e.message);
     } finally {
@@ -665,6 +660,7 @@ export default function App() {
 
       {/* Detail Panel */}
       <DetailPanel pair={selectedPair} onClose={() => setSelectedPair(null)} />
+      <AgentDocs />
     </div>
   );
 }

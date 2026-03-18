@@ -1,6 +1,8 @@
-# NOVA SCANNER — DexScreener Token Intelligence
+# Nova Scanner — DexScreener Token Intelligence
 
-Real-time Solana meme coin scanner powered by DexScreener's public API and WebSocket feeds. Built for AI agent integration and fast token discovery.
+Real-time multi-chain token scanner powered by DexScreener. Built for humans and AI agents — with structured JSON APIs, token scoring, risk detection, and action recommendations.
+
+**Live:** [nova-scanner-taupe.vercel.app](https://nova-scanner-taupe.vercel.app) · **Static UI:** `/static-scanner.html` · Built by [@0xAiNovaCEO](https://x.com/0xAiNovaCEO)
 
 ## Features
 
@@ -13,6 +15,49 @@ Real-time Solana meme coin scanner powered by DexScreener's public API and WebSo
 - **Sortable columns**: Price changes (5m/1h/24h), volume, liquidity, market cap, age, score
 - **Filters**: Chain, minimum liquidity, minimum score
 - **Detail panel**: Full token breakdown with transaction data, links, and JSON export
+
+### AI Agent API — `/api/ai` (Full Intelligence Layer)
+
+`GET /api/ai` — AI-optimized endpoint with scoring breakdown, risk flags, action recommendations, and pre-computed ratios.
+
+**Parameters:**
+| Param | Options | Description |
+|-------|---------|-------------|
+| `chain` | `solana`, `ethereum`, `base`, `all` | Chain filter |
+| `format` | `full`, `compact`, `actions_only` | Response verbosity |
+| `action` | `BUY`, `WATCH`, `SKIP`, `AVOID` | Filter by recommendation |
+| `minScore` | 0–100 | Minimum score |
+| `q` | — | Search by symbol/address |
+
+**Example calls:**
+```bash
+# Get BUY signals with full breakdown
+curl "https://nova-scanner-taupe.vercel.app/api/ai?chain=solana&action=BUY&format=full"
+
+# Compact fast-poll format
+curl "https://nova-scanner-taupe.vercel.app/api/ai?format=compact&minScore=75"
+
+# Actions only — for decision agents
+curl "https://nova-scanner-taupe.vercel.app/api/ai?format=actions_only&action=BUY"
+
+# Search a specific token
+curl "https://nova-scanner-taupe.vercel.app/api/ai?q=BONK&format=full"
+```
+
+**Full format response per token:**
+```json
+{
+  "identity": { "token": "...", "symbol": "BONK", "chain": "solana", "dexScreenerUrl": "..." },
+  "market": { "priceUsd": "0.00001", "marketCap": 1200000, "liquidity": 80000, "volume": {...}, "priceChange": {...} },
+  "transactions": { "m5": { "buys": 42, "sells": 8 }, "h1": {...}, "h24": {...} },
+  "ratios": { "volumeToMcap": 1.8, "buyRatio5m": 0.84, "liquidityToMcap": 0.067, "volumeAcceleration": 2.1 },
+  "scoring": { "total": 87, "breakdown": { "liquidity": {...}, "volume": {...}, "buyPressure": {...} } },
+  "risk": { "flags": [...], "riskLevel": "LOW", "criticalCount": 0, "warningCount": 0 },
+  "recommendation": { "action": "BUY", "confidence": "HIGH", "suggestedSize": "3-5% of portfolio", "suggestedStopLoss": "-30%" }
+}
+```
+
+**Response also includes `_agentHints`** — endpoint examples, scoring guide, ratio interpretation guide built-in.
 
 ### AI Agent API Endpoint
 `GET /api/scan` — Returns scored tokens as structured JSON for agent consumption.
@@ -137,8 +182,9 @@ async function fetchScannerSignals() {
 
 ## Tech Stack
 - **Framework**: Next.js 14 (App Router)
-- **Frontend**: React 18
-- **Styling**: Custom CSS (dark terminal theme)
+- **Frontend**: React 18, Inter font (landing page theme)
+- **Styling**: Custom CSS matching Nova landing page design
 - **Data**: DexScreener Public API (no key required)
-- **Deployment**: Vercel
+- **Deployment**: Vercel (auto-deploy on push to main)
 - **Real-time**: Native WebSocket to DexScreener
+- **Static UI**: `/static-scanner.html` (Vercel proxy at `/api/dex/...`)

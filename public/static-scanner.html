@@ -1,0 +1,989 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>NOVA SCAN // Solana Token Radar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;700;800&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg: #080b0f;
+    --surface: #0d1117;
+    --surface2: #111820;
+    --border: #1e2d3d;
+    --accent: #00ffe0;
+    --accent2: #ff3e6c;
+    --accent3: #f7c948;
+    --accent4: #7b5ea7;
+    --text: #c9d8e8;
+    --muted: #4a6070;
+    --green: #00e676;
+    --red: #ff4444;
+    --hot: #ff6b00;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* SCANLINE OVERLAY */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,255,224,0.015) 2px,
+      rgba(0,255,224,0.015) 4px
+    );
+    pointer-events: none;
+    z-index: 1000;
+  }
+
+  /* NOISE TEXTURE */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    opacity: 0.4;
+    pointer-events: none;
+    z-index: 999;
+  }
+
+  /* ── HEADER ── */
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 0 2rem;
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    backdrop-filter: blur(12px);
+  }
+
+  .header-inner {
+    max-width: 1400px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 56px;
+  }
+
+  .logo {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 1.1rem;
+    letter-spacing: 0.15em;
+    color: var(--accent);
+    text-shadow: 0 0 20px rgba(0,255,224,0.5);
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .logo-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 10px var(--accent);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.7); }
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    font-size: 0.7rem;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+  }
+
+  .live-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--green);
+    font-size: 0.65rem;
+    letter-spacing: 0.12em;
+  }
+
+  .live-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  #last-updated {
+    font-size: 0.65rem;
+    color: var(--muted);
+  }
+
+  /* ── TICKER TAPE ── */
+  .ticker-wrap {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    overflow: hidden;
+    height: 32px;
+    display: flex;
+    align-items: center;
+  }
+
+  .ticker-track {
+    display: flex;
+    gap: 3rem;
+    animation: ticker 40s linear infinite;
+    white-space: nowrap;
+    padding-left: 100%;
+  }
+
+  .ticker-item {
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .ticker-sym { color: var(--accent); font-weight: 700; }
+  .ticker-price { color: var(--text); }
+  .ticker-chg.pos { color: var(--green); }
+  .ticker-chg.neg { color: var(--red); }
+
+  @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+
+  /* ── MAIN ── */
+  main {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 2rem;
+  }
+
+  /* ── SECTION HEADER ── */
+  .section-header {
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    margin-top: 2.5rem;
+  }
+
+  .section-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .section-line {
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(to right, var(--border), transparent);
+  }
+
+  .section-count {
+    font-size: 0.65rem;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+  }
+
+  /* ── FILTERS ── */
+  .filters {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+  }
+
+  .filter-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 0.35rem 0.85rem;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+
+  .filter-btn:hover, .filter-btn.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(0,255,224,0.05);
+    box-shadow: 0 0 12px rgba(0,255,224,0.1);
+  }
+
+  /* ── GRID ── */
+  .token-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 1px;
+    background: var(--border);
+  }
+
+  /* ── TOKEN CARD ── */
+  .token-card {
+    background: var(--surface);
+    padding: 1.4rem;
+    cursor: pointer;
+    transition: background 0.2s;
+    position: relative;
+    overflow: hidden;
+    animation: fadeIn 0.4s ease forwards;
+    opacity: 0;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .token-card:hover {
+    background: var(--surface2);
+  }
+
+  .token-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 2px;
+    background: var(--card-accent, var(--accent));
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+
+  .token-card:hover::before { opacity: 1; }
+
+  /* HOT CARD */
+  .token-card.hot {
+    --card-accent: var(--hot);
+  }
+
+  .token-card.hot::before { opacity: 1; }
+
+  .hot-label {
+    position: absolute;
+    top: 0.8rem;
+    right: 0.8rem;
+    font-size: 0.6rem;
+    letter-spacing: 0.15em;
+    color: var(--hot);
+    border: 1px solid var(--hot);
+    padding: 0.15rem 0.4rem;
+    text-transform: uppercase;
+    font-weight: 700;
+    background: rgba(255,107,0,0.07);
+  }
+
+  /* CARD TOP ROW */
+  .card-top {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.8rem;
+    margin-bottom: 1rem;
+  }
+
+  .token-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 4px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    color: var(--accent);
+    font-weight: 700;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+
+  .token-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .token-name-block { flex: 1; min-width: 0; }
+
+  .token-symbol {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 1rem;
+    letter-spacing: 0.05em;
+    color: white;
+    line-height: 1;
+    margin-bottom: 0.2rem;
+  }
+
+  .token-name {
+    font-size: 0.65rem;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    letter-spacing: 0.05em;
+  }
+
+  .token-price-block { text-align: right; }
+
+  .token-price {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: white;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    margin-bottom: 0.2rem;
+  }
+
+  .price-change {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+  }
+
+  .price-change.pos { color: var(--green); }
+  .price-change.neg { color: var(--red); }
+
+  /* STATS ROW */
+  .card-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .stat {
+    background: var(--bg);
+    padding: 0.5rem 0.6rem;
+  }
+
+  .stat-label {
+    font-size: 0.55rem;
+    color: var(--muted);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 0.25rem;
+  }
+
+  .stat-value {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: 0.02em;
+  }
+
+  /* BOOST BAR */
+  .boost-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .boost-label {
+    font-size: 0.6rem;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .boost-bar-track {
+    flex: 1;
+    height: 3px;
+    background: var(--border);
+    overflow: hidden;
+  }
+
+  .boost-bar-fill {
+    height: 100%;
+    background: linear-gradient(to right, var(--accent4), var(--accent));
+    transition: width 1s ease;
+  }
+
+  .boost-val {
+    font-size: 0.6rem;
+    color: var(--accent);
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  /* BUY/SELL BAR */
+  .bs-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .bs-bar-track {
+    flex: 1;
+    height: 4px;
+    background: var(--border);
+    display: flex;
+    overflow: hidden;
+  }
+
+  .bs-buys { background: var(--green); transition: width 1s ease; }
+  .bs-sells { background: var(--red); flex: 1; }
+
+  .bs-label {
+    font-size: 0.58rem;
+    letter-spacing: 0.08em;
+  }
+
+  .bs-label.buy { color: var(--green); }
+  .bs-label.sell { color: var(--red); }
+
+  /* CARD FOOTER */
+  .card-footer {
+    margin-top: 0.75rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .dex-tag {
+    font-size: 0.58rem;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+
+  .view-link {
+    font-size: 0.6rem;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    text-decoration: none;
+    text-transform: uppercase;
+    opacity: 0.7;
+    transition: opacity 0.2s;
+  }
+
+  .view-link:hover { opacity: 1; }
+
+  .addr-chip {
+    font-size: 0.55rem;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 120px;
+    white-space: nowrap;
+  }
+
+  /* ── SUMMARY STATS ROW ── */
+  .summary-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--border);
+    margin-bottom: 2.5rem;
+    margin-top: 1rem;
+  }
+
+  .summary-card {
+    background: var(--surface);
+    padding: 1.2rem 1.5rem;
+    animation: fadeIn 0.5s ease forwards;
+    opacity: 0;
+  }
+
+  .summary-card:nth-child(1) { animation-delay: 0.1s; }
+  .summary-card:nth-child(2) { animation-delay: 0.2s; }
+  .summary-card:nth-child(3) { animation-delay: 0.3s; }
+  .summary-card:nth-child(4) { animation-delay: 0.4s; }
+
+  .summary-label {
+    font-size: 0.6rem;
+    color: var(--muted);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 0.4rem;
+  }
+
+  .summary-value {
+    font-family: 'Syne', sans-serif;
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: white;
+    line-height: 1;
+    margin-bottom: 0.25rem;
+  }
+
+  .summary-sub {
+    font-size: 0.6rem;
+    color: var(--muted);
+  }
+
+  /* ── LOADING ── */
+  .loading-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 300px;
+    gap: 1rem;
+  }
+
+  .loader {
+    width: 40px;
+    height: 2px;
+    background: var(--border);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .loader::after {
+    content: '';
+    position: absolute;
+    left: -100%;
+    width: 60%;
+    height: 100%;
+    background: var(--accent);
+    animation: load 1s ease-in-out infinite;
+    box-shadow: 0 0 8px var(--accent);
+  }
+
+  @keyframes load { 0% { left: -60%; } 100% { left: 100%; } }
+
+  .loading-text {
+    font-size: 0.65rem;
+    color: var(--muted);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+
+  /* ── ALERT BADGE ── */
+  .alert-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.6rem;
+    letter-spacing: 0.12em;
+    padding: 0.2rem 0.5rem;
+    border-radius: 2px;
+    text-transform: uppercase;
+    font-weight: 700;
+  }
+
+  .alert-badge.moon { background: rgba(247,201,72,0.1); color: var(--accent3); border: 1px solid rgba(247,201,72,0.3); }
+  .alert-badge.degen { background: rgba(255,62,108,0.1); color: var(--accent2); border: 1px solid rgba(255,62,108,0.3); }
+  .alert-badge.stable { background: rgba(0,230,118,0.1); color: var(--green); border: 1px solid rgba(0,230,118,0.2); }
+
+  /* ── REFRESH BTN ── */
+  .refresh-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 0.4rem 1rem;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.12em;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .refresh-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(0,255,224,0.05);
+  }
+
+  .refresh-btn.spinning .spin-icon { animation: spin 1s linear infinite; }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+  /* ── FOOTER ── */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 1.5rem 2rem;
+    margin-top: 4rem;
+    text-align: center;
+    font-size: 0.6rem;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  footer a { color: var(--muted); text-decoration: none; }
+  footer a:hover { color: var(--accent); }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 768px) {
+    main { padding: 1rem; }
+    .summary-row { grid-template-columns: 1fr 1fr; }
+    .token-grid { grid-template-columns: 1fr; }
+    .header-right { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="logo">
+      <div class="logo-dot"></div>
+      NOVA<span style="color:var(--muted);font-weight:400">//</span>SCAN
+    </div>
+    <div class="header-right">
+      <span>SOLANA MEME RADAR</span>
+      <div class="live-badge">
+        <div class="live-dot"></div>
+        LIVE
+      </div>
+      <button class="refresh-btn" id="refresh-btn" onclick="loadData()">
+        <span class="spin-icon">↻</span> REFRESH
+      </button>
+      <span id="last-updated">—</span>
+    </div>
+  </div>
+</header>
+
+<!-- TICKER TAPE -->
+<div class="ticker-wrap">
+  <div class="ticker-track" id="ticker"></div>
+</div>
+
+<main>
+
+  <!-- SUMMARY STATS -->
+  <div id="summary-row" class="summary-row" style="display:none">
+    <div class="summary-card">
+      <div class="summary-label">Tokens Scanned</div>
+      <div class="summary-value" id="s-count">—</div>
+      <div class="summary-sub">Top boosted on Solana</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">Total 24h Volume</div>
+      <div class="summary-value" id="s-vol">—</div>
+      <div class="summary-sub">Across all tracked pairs</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">Avg 24h Change</div>
+      <div class="summary-value" id="s-chg">—</div>
+      <div class="summary-sub">Median price movement</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">Hottest Token</div>
+      <div class="summary-value" id="s-hot" style="font-size:1.1rem">—</div>
+      <div class="summary-sub" id="s-hot-sub">By 24h % gain</div>
+    </div>
+  </div>
+
+  <!-- FILTERS -->
+  <div class="section-header">
+    <span class="section-title">Token Radar</span>
+    <div class="section-line"></div>
+    <span class="section-count" id="token-count">Loading...</span>
+  </div>
+
+  <div class="filters">
+    <button class="filter-btn active" onclick="setFilter('all', this)">ALL</button>
+    <button class="filter-btn" onclick="setFilter('hot', this)">🔥 HOT (&gt;100% 24H)</button>
+    <button class="filter-btn" onclick="setFilter('movers', this)">⚡ MOVERS (&gt;20%)</button>
+    <button class="filter-btn" onclick="setFilter('volume', this)">💎 HIGH VOL</button>
+    <button class="filter-btn" onclick="setFilter('new', this)">🆕 LOW MCAP</button>
+  </div>
+
+  <!-- LOADING -->
+  <div class="loading-screen" id="loading">
+    <div class="loader"></div>
+    <div class="loading-text">Scanning Solana mempool...</div>
+  </div>
+
+  <!-- TOKEN GRID -->
+  <div class="token-grid" id="token-grid" style="display:none"></div>
+
+</main>
+
+<footer>
+  <p>Data via <a href="https://dexscreener.com" target="_blank">DexScreener API</a> &nbsp;·&nbsp; 
+  Not financial advice &nbsp;·&nbsp; 
+  DYOR &nbsp;·&nbsp; 
+  Built by <a href="https://github.com/wurstsol" target="_blank">wurstsol</a></p>
+</footer>
+
+<script>
+let allTokens = [];
+let currentFilter = 'all';
+
+function fmt(n) {
+  if (!n && n !== 0) return '—';
+  if (n >= 1e9) return '$' + (n/1e9).toFixed(2) + 'B';
+  if (n >= 1e6) return '$' + (n/1e6).toFixed(2) + 'M';
+  if (n >= 1e3) return '$' + (n/1e3).toFixed(1) + 'K';
+  return '$' + n.toFixed(2);
+}
+
+function fmtPrice(p) {
+  if (!p) return '—';
+  const n = parseFloat(p);
+  if (n < 0.000001) return '$' + n.toExponential(2);
+  if (n < 0.01) return '$' + n.toFixed(7);
+  if (n < 1) return '$' + n.toFixed(4);
+  return '$' + n.toFixed(2);
+}
+
+function chgClass(v) { return v >= 0 ? 'pos' : 'neg'; }
+function chgStr(v) { if (!v && v !== 0) return '—'; return (v >= 0 ? '+' : '') + v.toFixed(2) + '%'; }
+
+function riskBadge(token) {
+  const chg = token.priceChange24h || 0;
+  const vol = token.volume24h || 0;
+  const liq = token.liquidity || 0;
+  if (chg > 500) return '<span class="alert-badge moon">🌙 MOONSHOT</span>';
+  if (chg > 100 && vol > 500000) return '<span class="alert-badge moon">⚡ PUMPING</span>';
+  if (liq < 20000) return '<span class="alert-badge degen">⚠ LOW LIQ</span>';
+  if (chg > 20) return '<span class="alert-badge stable">📈 TRENDING</span>';
+  return '';
+}
+
+function isHot(token) {
+  return (token.priceChange24h || 0) > 100 || (token.boosts || 0) >= 300;
+}
+
+function renderCard(token, idx) {
+  const hot = isHot(token);
+  const buyPct = token.txns_buys_h1 && token.txns_sells_h1
+    ? (token.txns_buys_h1 / (token.txns_buys_h1 + token.txns_sells_h1) * 100)
+    : 50;
+  const boostPct = Math.min(100, ((token.boosts || 0) / 500) * 100);
+  const shortAddr = token.address ? token.address.slice(0,6) + '...' + token.address.slice(-4) : '—';
+  const iconUrl = token.iconId
+    ? `https://cdn.dexscreener.com/token-images/solana/${token.address}?timestamp=${Date.now()}`
+    : null;
+
+  const delay = (idx * 0.05).toFixed(2);
+
+  return `
+<div class="token-card ${hot ? 'hot' : ''}" style="animation-delay:${delay}s" onclick="window.open('${token.url}','_blank')">
+  ${hot ? '<div class="hot-label">HOT</div>' : ''}
+  <div class="card-top">
+    <div class="token-icon">
+      ${iconUrl ? `<img src="${iconUrl}" onerror="this.parentElement.textContent='${token.symbol.slice(0,2)}'"/>` : token.symbol.slice(0,2)}
+    </div>
+    <div class="token-name-block">
+      <div class="token-symbol">${token.symbol}</div>
+      <div class="token-name">${token.name}</div>
+      <div style="margin-top:0.4rem">${riskBadge(token)}</div>
+    </div>
+    <div class="token-price-block">
+      <div class="token-price">${fmtPrice(token.priceUsd)}</div>
+      <div class="price-change ${chgClass(token.priceChange24h)}">${chgStr(token.priceChange24h)}</div>
+      <div style="font-size:0.58rem;color:var(--muted);margin-top:0.2rem;letter-spacing:0.05em">24H</div>
+    </div>
+  </div>
+
+  <div class="card-stats">
+    <div class="stat">
+      <div class="stat-label">Volume 24H</div>
+      <div class="stat-value">${fmt(token.volume24h)}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Liquidity</div>
+      <div class="stat-value">${fmt(token.liquidity)}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Mkt Cap</div>
+      <div class="stat-value">${fmt(token.marketCap)}</div>
+    </div>
+  </div>
+
+  <div class="boost-row">
+    <div class="boost-label">Boosts</div>
+    <div class="boost-bar-track">
+      <div class="boost-bar-fill" style="width:${boostPct}%"></div>
+    </div>
+    <div class="boost-val">⚡ ${token.boosts || 0}</div>
+  </div>
+
+  <div class="bs-row">
+    <span class="bs-label buy">B:${token.txns_buys_h1 || 0}</span>
+    <div class="bs-bar-track">
+      <div class="bs-buys" style="width:${buyPct}%"></div>
+      <div class="bs-sells"></div>
+    </div>
+    <span class="bs-label sell">S:${token.txns_sells_h1 || 0}</span>
+  </div>
+
+  <div class="card-footer">
+    <div>
+      <div class="dex-tag">${token.dex || '—'}</div>
+      <div class="addr-chip">${shortAddr}</div>
+    </div>
+    <a class="view-link" href="${token.url}" target="_blank" onclick="event.stopPropagation()">
+      VIEW →
+    </a>
+  </div>
+</div>`;
+}
+
+function setFilter(f, btn) {
+  currentFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderGrid();
+}
+
+function renderGrid() {
+  let tokens = [...allTokens];
+  if (currentFilter === 'hot') tokens = tokens.filter(t => (t.priceChange24h || 0) > 100);
+  else if (currentFilter === 'movers') tokens = tokens.filter(t => Math.abs(t.priceChange24h || 0) > 20);
+  else if (currentFilter === 'volume') tokens = tokens.filter(t => (t.volume24h || 0) > 500000);
+  else if (currentFilter === 'new') tokens = tokens.filter(t => (t.marketCap || 0) < 200000);
+
+  document.getElementById('token-count').textContent = `${tokens.length} tokens`;
+  document.getElementById('token-grid').innerHTML = tokens.map((t, i) => renderCard(t, i)).join('');
+}
+
+function updateSummary() {
+  const count = allTokens.length;
+  const totalVol = allTokens.reduce((a, t) => a + (t.volume24h || 0), 0);
+  const changes = allTokens.map(t => t.priceChange24h || 0).filter(v => Math.abs(v) < 10000);
+  const avgChg = changes.reduce((a, b) => a + b, 0) / (changes.length || 1);
+  const hottest = allTokens.reduce((a, b) => (b.priceChange24h || 0) > (a.priceChange24h || 0) ? b : a, allTokens[0]);
+
+  document.getElementById('s-count').textContent = count;
+  document.getElementById('s-vol').textContent = fmt(totalVol);
+  document.getElementById('s-chg').textContent = chgStr(avgChg);
+  document.getElementById('s-chg').style.color = avgChg >= 0 ? 'var(--green)' : 'var(--red)';
+  document.getElementById('s-hot').textContent = '$' + (hottest?.symbol || '—');
+  document.getElementById('s-hot-sub').textContent = chgStr(hottest?.priceChange24h || 0) + ' 24h';
+  document.getElementById('summary-row').style.display = 'grid';
+}
+
+function updateTicker() {
+  const items = allTokens.map(t => `
+    <div class="ticker-item">
+      <span class="ticker-sym">$${t.symbol}</span>
+      <span class="ticker-price">${fmtPrice(t.priceUsd)}</span>
+      <span class="ticker-chg ${chgClass(t.priceChange24h)}">${chgStr(t.priceChange24h)}</span>
+    </div>
+  `).join('');
+  document.getElementById('ticker').innerHTML = items + items; // duplicate for seamless loop
+}
+
+async function loadData() {
+  const btn = document.getElementById('refresh-btn');
+  btn.classList.add('spinning');
+
+  const ADDRS = [
+    'CNEq4NnvjVWaqJWPtD3PNGrY8T71K9jDe74iES3Epump',
+    '6D1hQ22C7oCUKKVuy91i8HTHnzSjsHCuNAcH9WH2pump',
+    '412zDygnwP9DzitnQVgRKUFFTDmrYScFch6P2k39pump',
+    'HGYiaHSpJAfiwZBkYvw2HWgdKULW2LyDqwQ7zXsNpump',
+    'EUfRMccYw5E8Jv7NFmcpgKVFABqTr3QVputRQrbZpump',
+    'bw7LgsywozSwWZ1nAtqA2vUtHemxod9uo2K6dFmpump',
+    '3BHhMXMyyGGzLcTk6u5iJwTcV7eEGG9bWJrTKUttpump',
+    'soLzqz1mYyD5G13ssmSN9jW7BtamHjUaT8VmHfPa2yH',
+    '8XSRFmCAaMU617gv7RTS7j8nQ5MEgBVVmVcp24cDpump',
+    'De4ULouuU2cAQkhKuYrsrFtJGRRmcSwQD5esmnAUpump'
+  ];
+
+  try {
+    // Also fetch latest boosts to get fresh list
+    const [boostRes, tokenRes] = await Promise.all([
+      fetch('https://api.dexscreener.com/token-boosts/top/v1'),
+      fetch(`https://api.dexscreener.com/tokens/v1/solana/${ADDRS.join(',')}`)
+    ]);
+
+    const boostData = await boostRes.json();
+    const tokenData = await tokenRes.json();
+
+    // Also try to get live top boosted addresses
+    const liveAddrs = boostData.slice(0, 20).map(b => b.tokenAddress);
+    const liveBoostMap = {};
+    boostData.forEach(b => { liveBoostMap[b.tokenAddress] = b.totalAmount; });
+
+    // Fetch live tokens
+    const liveRes = await fetch(`https://api.dexscreener.com/tokens/v1/solana/${liveAddrs.join(',')}`);
+    const liveData = await liveRes.json();
+
+    // Merge and dedupe
+    const all = [...liveData, ...tokenData];
+    const seen = new Set();
+    const merged = [];
+    for (const p of all) {
+      const addr = p?.baseToken?.address;
+      if (!addr || seen.has(addr)) continue;
+      seen.add(addr);
+      merged.push({
+        symbol: p.baseToken?.symbol || '???',
+        name: p.baseToken?.name || '???',
+        address: addr,
+        priceUsd: p.priceUsd,
+        volume24h: p.volume?.h24,
+        priceChange5m: p.priceChange?.m5,
+        priceChange1h: p.priceChange?.h1,
+        priceChange24h: p.priceChange?.h24,
+        liquidity: p.liquidity?.usd,
+        fdv: p.fdv,
+        marketCap: p.marketCap,
+        txns_buys_h1: p.txns?.h1?.buys,
+        txns_sells_h1: p.txns?.h1?.sells,
+        boosts: liveBoostMap[addr] || p.boosts?.active || 0,
+        dex: p.dexId,
+        url: p.url,
+      });
+    }
+
+    // Sort by boost amount desc
+    allTokens = merged.sort((a, b) => (b.boosts || 0) - (a.boosts || 0));
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('token-grid').style.display = 'grid';
+    document.getElementById('last-updated').textContent = new Date().toLocaleTimeString();
+
+    updateSummary();
+    updateTicker();
+    renderGrid();
+
+  } catch (err) {
+    console.error(err);
+    document.getElementById('loading').innerHTML = `
+      <div style="color:var(--red);font-size:0.7rem;letter-spacing:0.1em">
+        SCAN FAILED — CORS restriction in browser.<br/>
+        <span style="color:var(--muted);font-size:0.6rem">Deploy to Vercel to enable API proxy.</span>
+      </div>`;
+  }
+
+  btn.classList.remove('spinning');
+}
+
+// Init
+loadData();
+// Auto-refresh every 60s
+setInterval(loadData, 60000);
+</script>
+</body>
+</html>
