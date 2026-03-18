@@ -2,6 +2,16 @@ import { NextResponse } from "next/server";
 
 const DEXSCREENER_API = "https://api.dexscreener.com";
 
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Cache-Control": "s-maxage=30, stale-while-revalidate=60",
+};
+
+export async function OPTIONS() {
+  return new Response(null, { status: 204, headers: CORS });
+}
+
 function computeScore(pair) {
   let score = 0;
   const liq = pair.liquidity?.usd || 0;
@@ -33,12 +43,12 @@ function computeScore(pair) {
     else if (ratio > 0.2) score += 6;
   }
 
-  const totalTxns5m = buys5m + sells5m;
-  if (totalTxns5m > 0) {
-    const buyRatio = buys5m / totalTxns5m;
-    if (buyRatio > 0.7 && totalTxns5m > 20) score += 15;
-    else if (buyRatio > 0.6 && totalTxns5m > 10) score += 10;
-    else if (buyRatio > 0.55) score += 5;
+  const total5m = buys5m + sells5m;
+  if (total5m > 0) {
+    const br = buys5m / total5m;
+    if (br > 0.7 && total5m > 20) score += 15;
+    else if (br > 0.6 && total5m > 10) score += 10;
+    else if (br > 0.55) score += 5;
   }
 
   if (change5m > 20) score += 15;
@@ -65,6 +75,20 @@ function getSignal(score) {
   return "SKIP";
 }
 
+async function enrichBatch(chainId, addresses) {
+  try {
+    const res = await fetch(
+      `${DEXSCREENER_API}/tokens/v1/${chainId}/${addresses.join(",")}`,
+      { next: { revalidate: 30 } }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const chain = searchParams.get("chain") || "solana";
@@ -77,83 +101,89 @@ export async function GET(request) {
     let allPairs = [];
 
     if (search) {
-      // Search mode
-      const res = await fetch(`${DEXSCREENER_API}/latest/dex/search?q=${encodeURIComponent(search)}`);
+      const res = await fetch(
+        `${DEXSCREENER_API}/latest/dex/search?q=${encodeURIComponent(search)}`,
+        { next: { revalidate: 30 } }
+      );
       const data = await res.json();
       allPairs = data.pairs || [];
     } else {
-      // Scanner mode — pull from profiles + boosts, then enrich
-      const [profilesRes, boostsRes] = await Promise.all([
-        fetch(`${DEXSCREENER_API}/token-profiles/latest/v1`),
-        fetch(`${DEXSCREENER_API}/token-boosts/top/v1`),
+      // Pull 3 sources in parallel
+      const [profilesRes, topBoostsRes, latestBoostsRes] = await Promise.allSettled([
+        fetch(`${DEXSCREENER_API}/token-profiles/latest/v1`, { next: { revalidate: 30 } }),
+        fetch(`${DEXSCREENER_API}/token-boosts/top/v1`, { next: { revalidate: 30 } }),
+        fetch(`${DEXSCREENER_API}/token-boosts/latest/v1`, { next: { revalidate: 30 } }),
       ]);
 
-      const profiles = await profilesRes.json();
-      const boosts = await boostsRes.json();
-      const profileList = Array.isArray(profiles) ? profiles : [];
-      const boostList = Array.isArray(boosts) ? boosts : [];
+      const parseList = async (settled) => {
+        if (settled.status !== "fulfilled" || !settled.value.ok) return [];
+        const d = await settled.value.json();
+        return Array.isArray(d) ? d : [];
+      };
 
-      // Deduplicate and filter by chain
+      const [profiles, topBoosts, latestBoosts] = await Promise.all([
+        parseList(profilesRes),
+        parseList(topBoostsRes),
+        parseList(latestBoostsRes),
+      ]);
+
+      // Deduplicate by chainId:tokenAddress
       const tokenMap = new Map();
-      [...profileList, ...boostList].forEach((t) => {
-        if (t.tokenAddress && (t.chainId === chain || chain === "all")) {
-          tokenMap.set(`${t.chainId}:${t.tokenAddress}`, t);
-        }
+      [...profiles, ...topBoosts, ...latestBoosts].forEach((t) => {
+        if (!t.tokenAddress) return;
+        if (chain !== "all" && t.chainId !== chain) return;
+        const key = `${t.chainId}:${t.tokenAddress}`;
+        if (!tokenMap.has(key)) tokenMap.set(key, t);
       });
 
-      const tokens = Array.from(tokenMap.values());
-
-      // Batch fetch pair data (30 per request)
+      // Group by chain, batch enrich in parallel (30/req)
       const byChain = {};
-      tokens.forEach((t) => {
+      for (const t of tokenMap.values()) {
         if (!byChain[t.chainId]) byChain[t.chainId] = [];
-        byChain[t.chainId].push(t);
-      });
+        byChain[t.chainId].push(t.tokenAddress);
+      }
 
-      for (const [c, tks] of Object.entries(byChain)) {
-        for (let i = 0; i < tks.length; i += 30) {
-          const batch = tks.slice(i, i + 30);
-          const addresses = batch.map((t) => t.tokenAddress).join(",");
-          try {
-            const res = await fetch(`${DEXSCREENER_API}/tokens/v1/${c}/${addresses}`);
-            const pairs = await res.json();
-            if (Array.isArray(pairs)) allPairs.push(...pairs);
-          } catch (e) {
-            console.warn(`Batch failed for ${c}:`, e.message);
-          }
+      const enrichPromises = [];
+      for (const [chainId, addrs] of Object.entries(byChain)) {
+        for (let i = 0; i < addrs.length; i += 30) {
+          enrichPromises.push(enrichBatch(chainId, addrs.slice(i, i + 30)));
         }
       }
+
+      const results = await Promise.all(enrichPromises);
+      allPairs = results.flat();
     }
 
-    // Score, filter, sort
     const scored = allPairs
+      .filter((p) => p.baseToken?.address)
       .map((p) => {
         const score = computeScore(p);
         return {
-          token: p.baseToken?.address,
-          symbol: p.baseToken?.symbol,
-          name: p.baseToken?.name,
+          token: p.baseToken.address,
+          symbol: p.baseToken.symbol,
+          name: p.baseToken.name,
           chain: p.chainId,
           dex: p.dexId,
           price: p.priceUsd,
-          priceNative: p.priceNative,
-          marketCap: p.marketCap || p.fdv,
-          liquidity: p.liquidity?.usd,
-          volume24h: p.volume?.h24,
-          volume1h: p.volume?.h1,
+          marketCap: p.marketCap || p.fdv || null,
+          liquidity: p.liquidity?.usd || null,
+          volume24h: p.volume?.h24 || null,
+          volume1h: p.volume?.h1 || null,
           priceChange: {
-            m5: p.priceChange?.m5,
-            h1: p.priceChange?.h1,
-            h6: p.priceChange?.h6,
-            h24: p.priceChange?.h24,
+            m5: p.priceChange?.m5 ?? null,
+            h1: p.priceChange?.h1 ?? null,
+            h6: p.priceChange?.h6 ?? null,
+            h24: p.priceChange?.h24 ?? null,
           },
           txns: {
-            m5: { buys: p.txns?.m5?.buys, sells: p.txns?.m5?.sells },
-            h1: { buys: p.txns?.h1?.buys, sells: p.txns?.h1?.sells },
-            h24: { buys: p.txns?.h24?.buys, sells: p.txns?.h24?.sells },
+            m5: { buys: p.txns?.m5?.buys ?? 0, sells: p.txns?.m5?.sells ?? 0 },
+            h1: { buys: p.txns?.h1?.buys ?? 0, sells: p.txns?.h1?.sells ?? 0 },
+            h24: { buys: p.txns?.h24?.buys ?? 0, sells: p.txns?.h24?.sells ?? 0 },
           },
           pairAddress: p.pairAddress,
-          pairCreatedAt: p.pairCreatedAt,
+          ageHours: p.pairCreatedAt
+            ? Math.round(((Date.now() - p.pairCreatedAt) / 3600000) * 10) / 10
+            : null,
           dexUrl: p.url,
           boosts: p.boosts?.active || 0,
           score,
@@ -164,15 +194,21 @@ export async function GET(request) {
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);
 
-    return NextResponse.json({
-      status: "ok",
-      timestamp: new Date().toISOString(),
-      chain,
-      count: scored.length,
-      filters: { minScore, minLiq, limit },
-      tokens: scored,
-    });
+    return NextResponse.json(
+      {
+        status: "ok",
+        timestamp: new Date().toISOString(),
+        chain,
+        count: scored.length,
+        filters: { minScore, minLiq, limit },
+        tokens: scored,
+      },
+      { headers: CORS }
+    );
   } catch (error) {
-    return NextResponse.json({ status: "error", message: error.message }, { status: 500 });
+    return NextResponse.json(
+      { status: "error", message: error.message },
+      { status: 500, headers: CORS }
+    );
   }
 }
